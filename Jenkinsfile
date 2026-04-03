@@ -1,5 +1,4 @@
 
-   
 pipeline {
     agent any
 
@@ -7,7 +6,7 @@ pipeline {
         DOCKER_IMAGE_NAME = 'jyotirmoy43/qbshop-app'
         DOCKER_MIGRATION_IMAGE_NAME = 'jyotirmoy43/qbshop-migration'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
-        GIT_BRANCH = "dev"
+        GIT_BRANCH = "main"   // ✅ FIXED (was dev)
     }
 
     stages {
@@ -99,10 +98,10 @@ pipeline {
                 sh '''
                 echo "Updating Kubernetes deployment..."
 
-                # Update image tag in deployment file
+                # Update image in deployment file
                 sed -i "s|image: .*|image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG|g" kubernetes/deployment.yaml
 
-                # Apply to EKS cluster
+                # Apply manifests
                 kubectl apply -f kubernetes/
 
                 echo "Deployment updated successfully!"
@@ -120,3 +119,6 @@ pipeline {
         }
     }
 }
+           
+          
+            
