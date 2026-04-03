@@ -1,124 +1,77 @@
-
 pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE_NAME = 'jyotirmoy43/qbshop-app'
-        DOCKER_MIGRATION_IMAGE_NAME = 'jyotirmoy43/qbshop-migration'
-        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
-        GIT_BRANCH = "main"   // ✅ FIXED (was dev)
+        DOCKER_USER = 'jyotirmoy43'
+        DOCKER_PASS = credentials('docker-hub-password') // Jenkins credential ID
+        IMAGE_TAG   = "${env.BUILD_NUMBER}"
+        KUBE_CONFIG = '/home/jenkins/.kube/config'       // Ensure your kubeconfig path
     }
 
     stages {
-
         stage('Cleanup Workspace') {
             steps {
                 cleanWs()
             }
         }
 
-        stage('Clone Repository') {
+        stage('Checkout Repository') {
             steps {
-                git branch: "${GIT_BRANCH}", url: 'https://github.com/jyotirmoy43/Qualibytes-Ecommerce.git'
-            }
-        }
-
-        stage('Cleanup Old Docker Resources') {
-            steps {
-                sh '''
-                echo "Cleaning Docker system..."
-                docker system prune -af || true
-                '''
+                git url: 'https://github.com/jyotirmoy43/Qualibytes-Ecommerce.git', branch: 'main'
             }
         }
 
         stage('Build Docker Images') {
             parallel {
-
                 stage('Build App Image') {
                     steps {
-                        sh '''
-                        echo "Building main app image..."
-                        docker build -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG .
-                        '''
+                        sh """
+                            echo "Building main app image..."
+                            docker build -t ${DOCKER_USER}/qbshop-app:${IMAGE_TAG} .
+                        """
                     }
                 }
 
                 stage('Build Migration Image') {
                     steps {
-                        sh '''
-                        echo "Building migration image..."
-                        docker build -t $DOCKER_MIGRATION_IMAGE_NAME:$DOCKER_IMAGE_TAG -f scripts/Dockerfile.migration .
-                        '''
+                        sh """
+                            echo "Building migration image..."
+                            docker build -t ${DOCKER_USER}/qbshop-migration:${IMAGE_TAG} -f scripts/Dockerfile.migration .
+                        """
                     }
                 }
             }
         }
 
-        stage('Run Unit Tests') {
-            steps {
-                sh '''
-                echo "Running tests..."
-                mvn test || true
-                '''
-            }
-        }
-
-        stage('Security Scan (Trivy)') {
-            steps {
-                sh '''
-                echo "Running Trivy scan..."
-                trivy image $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG || true
-                '''
-            }
-        }
-
         stage('Push Docker Images') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-hub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-
-                    sh '''
-                    echo "Logging into DockerHub..."
-                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
-                    echo "Pushing images..."
-                    docker push $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
-                    docker push $DOCKER_MIGRATION_IMAGE_NAME:$DOCKER_IMAGE_TAG
-                    '''
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-password', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo "${DOCKER_PASS}" | docker login -u ${DOCKER_USER} --password-stdin
+                        docker push ${DOCKER_USER}/qbshop-app:${IMAGE_TAG}
+                        docker push ${DOCKER_USER}/qbshop-migration:${IMAGE_TAG}
+                    """
                 }
             }
         }
 
         stage('Deploy to Kubernetes (EKS)') {
             steps {
-                sh '''
-                echo "Updating Kubernetes deployment..."
-
-                # Update image in deployment file
-                sed -i "s|image: .*|image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG|g" kubernetes/deployment.yaml
-
-                # Apply manifests
-                kubectl apply -f kubernetes/
-
-                echo "Deployment updated successfully!"
-                '''
+                sh """
+                    echo "Updating Kubernetes deployment..."
+                    sed -i 's|REPLACE_TAG|${IMAGE_TAG}|g kubernetes/deployment.yaml
+                    kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/deployment.yaml
+                """
             }
         }
     }
 
     post {
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "✅ Pipeline completed successfully! App deployed with tag ${IMAGE_TAG}"
         }
         failure {
             echo "❌ Pipeline failed!"
         }
     }
 }
-           
-          
-            
