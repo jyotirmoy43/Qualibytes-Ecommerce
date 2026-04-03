@@ -1,12 +1,13 @@
-@Library('Shared') _
+
+   @Library('Shared') _
 
 pipeline {
     agent any
     
     environment {
         // Updated image names for QBShop project (DEV)
-        DOCKER_IMAGE_NAME = 'satyamsri/qbshop-app'
-        DOCKER_MIGRATION_IMAGE_NAME = 'satyamsri/qbshop-migration'
+        DOCKER_IMAGE_NAME = 'jyotirmoy43/qbshop-app'
+        DOCKER_MIGRATION_IMAGE_NAME = 'jyotirmoy43/qbshop-migration'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         GITHUB_CREDENTIALS = credentials('github-credentials')
         GIT_BRANCH = "dev"
@@ -25,12 +26,12 @@ pipeline {
         stage('Clone Repository') {
             steps {
                 script {
-                    clone("https://github.com/Satyams-git/Qualibytes-Ecommerce.git", "dev")
+                    clone("https://github.com/jyotirmoy43/Qualibytes-Ecommerce.git", "dev")
                 }
             }
         }
 
-        //  NEW STAGE: Cleanup old Docker images to avoid disk full issues
+        // Cleanup old Docker images to avoid disk full issues
         stage('Cleanup Old Docker Images') {
             steps {
                 script {
@@ -45,7 +46,7 @@ pipeline {
                     // Remove stopped containers
                     sh "docker container prune -f"
 
-                    // Remove unused volumes (safe)
+                    // Remove unused volumes
                     sh "docker volume prune -f"
 
                     echo "Cleanup completed successfully!"
@@ -143,4 +144,5 @@ pipeline {
             }
         }
     }
-}
+}     
+      
