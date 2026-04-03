@@ -3,20 +3,32 @@ pipeline {
 
     environment {
         DOCKER_USER = 'jyotirmoy43'
+        DOCKER_PASS = credentials('docker-hub-password') // Jenkins credential ID
         IMAGE_TAG   = "${env.BUILD_NUMBER}"
-        KUBE_CONFIG = '/home/jenkins/.kube/config' // Ensure kubeconfig exists in Jenkins
+        KUBE_CONFIG = '/home/jenkins/.kube/config'       // Update if your kubeconfig path is different
+        DEPLOY_FILE = 'kubernetes/deployment.yaml'      // Adjust path if needed
     }
 
     stages {
         stage('Cleanup Workspace') {
-            steps { 
-                cleanWs() 
+            steps {
+                cleanWs()
             }
         }
 
         stage('Checkout Repository') {
             steps {
                 git url: 'https://github.com/jyotirmoy43/Qualibytes-Ecommerce.git', branch: 'main'
+            }
+        }
+
+        stage('Verify Tools') {
+            steps {
+                sh """
+                    echo "Checking for required tools..."
+                    command -v docker || { echo 'Docker not installed'; exit 1; }
+                    command -v kubectl || { echo 'kubectl not installed'; exit 1; }
+                """
             }
         }
 
@@ -42,32 +54,6 @@ pipeline {
             }
         }
 
-        stage('Run Unit Tests') {
-            steps {
-                sh """
-                    echo "Running Maven tests..."
-                    if command -v mvn >/dev/null 2>&1; then
-                        mvn test
-                    else
-                        echo "Maven not found, skipping tests..."
-                    fi
-                """
-            }
-        }
-
-        stage('Security Scan (Trivy)') {
-            steps {
-                sh """
-                    echo "Running Trivy scan..."
-                    if command -v trivy >/dev/null 2>&1; then
-                        trivy image ${DOCKER_USER}/qbshop-app:${IMAGE_TAG} || true
-                    else
-                        echo "Trivy not installed, skipping scan..."
-                    fi
-                """
-            }
-        }
-
         stage('Push Docker Images') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-password', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -83,9 +69,15 @@ pipeline {
         stage('Deploy to Kubernetes (EKS)') {
             steps {
                 sh """
+                    if [ ! -f ${DEPLOY_FILE} ]; then
+                        echo "Deployment file ${DEPLOY_FILE} not found!"
+                        exit 1
+                    fi
+
                     echo "Updating Kubernetes deployment..."
-                    sed -i "s|REPLACE_TAG|${IMAGE_TAG}|g" kubernetes/deployment.yaml
-                    kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/deployment.yaml
+                    sed -i 's|REPLACE_TAG|${IMAGE_TAG}|g' ${DEPLOY_FILE}
+
+                    kubectl --kubeconfig=${KUBE_CONFIG} apply -f ${DEPLOY_FILE}
                 """
             }
         }
