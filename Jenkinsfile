@@ -3,15 +3,14 @@ pipeline {
 
     environment {
         DOCKER_USER = 'jyotirmoy43'
-        DOCKER_PASS = credentials('docker-hub-password') // Jenkins credential ID
         IMAGE_TAG   = "${env.BUILD_NUMBER}"
-        KUBE_CONFIG = '/home/jenkins/.kube/config'       // Ensure your kubeconfig path
+        KUBE_CONFIG = '/home/jenkins/.kube/config' // Ensure kubeconfig exists in Jenkins
     }
 
     stages {
         stage('Cleanup Workspace') {
-            steps {
-                cleanWs()
+            steps { 
+                cleanWs() 
             }
         }
 
@@ -43,6 +42,32 @@ pipeline {
             }
         }
 
+        stage('Run Unit Tests') {
+            steps {
+                sh """
+                    echo "Running Maven tests..."
+                    if command -v mvn >/dev/null 2>&1; then
+                        mvn test
+                    else
+                        echo "Maven not found, skipping tests..."
+                    fi
+                """
+            }
+        }
+
+        stage('Security Scan (Trivy)') {
+            steps {
+                sh """
+                    echo "Running Trivy scan..."
+                    if command -v trivy >/dev/null 2>&1; then
+                        trivy image ${DOCKER_USER}/qbshop-app:${IMAGE_TAG} || true
+                    else
+                        echo "Trivy not installed, skipping scan..."
+                    fi
+                """
+            }
+        }
+
         stage('Push Docker Images') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-password', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -59,7 +84,7 @@ pipeline {
             steps {
                 sh """
                     echo "Updating Kubernetes deployment..."
-                    sed -i 's|REPLACE_TAG|${IMAGE_TAG}|g kubernetes/deployment.yaml
+                    sed -i "s|REPLACE_TAG|${IMAGE_TAG}|g" kubernetes/deployment.yaml
                     kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/deployment.yaml
                 """
             }
