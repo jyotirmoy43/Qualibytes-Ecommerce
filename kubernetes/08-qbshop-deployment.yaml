@@ -7,17 +7,14 @@ metadata:
     app: qbshop
 spec:
   replicas: 2
-
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 0
       maxSurge: 1
-
   selector:
     matchLabels:
       app: qbshop
-
   template:
     metadata:
       labels:
@@ -27,16 +24,13 @@ spec:
         - name: qbshop-app
           image: jyotirmoy43/qbshop-app:REPLACE_TAG
           imagePullPolicy: Always
-
           ports:
             - containerPort: 3000
-
           envFrom:
             - configMapRef:
                 name: qbshop-config
             - secretRef:
                 name: qbshop-secrets
-
           env:
             - name: NEXTAUTH_URL
               valueFrom:
@@ -53,7 +47,6 @@ spec:
                 secretKeyRef:
                   name: qbshop-secrets
                   key: JWT_SECRET
-
           resources:
             requests:
               memory: "256Mi"
@@ -61,24 +54,36 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-
           startupProbe:
             httpGet:
               path: /
               port: 3000
             failureThreshold: 30
             periodSeconds: 10
-
           readinessProbe:
             httpGet:
               path: /
               port: 3000
             initialDelaySeconds: 20
             periodSeconds: 15
-
           livenessProbe:
             httpGet:
               path: /
               port: 3000
             initialDelaySeconds: 25
             periodSeconds: 20
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbshop-service
+  namespace: qbshop
+spec:
+  selector:
+    app: qbshop
+  type: NodePort
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 31000
