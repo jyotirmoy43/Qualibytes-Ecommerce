@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -75,7 +76,7 @@ pipeline {
                     sh '''
                         echo "Updating image tags..."
 
-                        # FIXED: Replace REPLACE_TAG correctly
+                        # Fix REPLACE_TAG
                         sed -i "s|REPLACE_TAG|${IMAGE_TAG}|g" kubernetes/08-qbshop-deployment.yaml
                         sed -i "s|REPLACE_TAG|${IMAGE_TAG}|g" kubernetes/12-migration-job.yaml
 
@@ -88,22 +89,25 @@ pipeline {
                         # MongoDB
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/02-mongodb-pv.yaml || true
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/03-mongodb-pvc.yaml
+
+                        # 🔥 FIX: delete service before reapply
+                        kubectl --kubeconfig=${KUBE_CONFIG} delete service mongodb-service -n qbshop || true
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/06-mongodb-service.yaml
+
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/07-mongodb-statefulset.yaml
 
                         # App
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/08-qbshop-deployment.yaml
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/09-qbshop-service.yaml
 
-                        # Migration job
+                        # Migration
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/12-migration-job.yaml || true
 
                         # Optional
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/10-ingress.yaml || true
                         kubectl --kubeconfig=${KUBE_CONFIG} apply -f kubernetes/11-hpa.yaml || true
 
-                        echo "Restarting pods..."
-
+                        echo "Restarting deployment..."
                         kubectl --kubeconfig=${KUBE_CONFIG} rollout restart deployment qbshop -n qbshop || true
                     '''
                 }
@@ -113,10 +117,10 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 sh '''
-                    echo "Checking pods..."
+                    echo "Pods:"
                     kubectl --kubeconfig=${KUBE_CONFIG} get pods -n qbshop
 
-                    echo "Checking services..."
+                    echo "Services:"
                     kubectl --kubeconfig=${KUBE_CONFIG} get svc -n qbshop
                 '''
             }
@@ -131,4 +135,4 @@ pipeline {
             echo "❌ Pipeline failed!"
         }
     }
-}
+}      
