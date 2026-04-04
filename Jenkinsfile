@@ -3,10 +3,9 @@ pipeline {
 
     environment {
         DOCKER_USER = 'jyotirmoy43'
-        DOCKER_PASS = credentials('docker-hub-password') // Jenkins credential ID
         IMAGE_TAG   = "${env.BUILD_NUMBER}"
-        KUBE_CONFIG = '/home/jenkins/.kube/config'       // Update if your kubeconfig path is different
-        DEPLOY_FILE = 'kubernetes/deployment.yaml'      // Adjust path if needed
+        KUBE_CONFIG = '/home/jenkins/.kube/config'       // Adjust if needed
+        DEPLOY_FILE = 'kubernetes/deployment.yaml'      // Adjust if needed
     }
 
     stages {
@@ -16,19 +15,25 @@ pipeline {
             }
         }
 
-        stage('Checkout Repository') {
+        stage('Clone Repository') {
             steps {
-                git url: 'https://github.com/jyotirmoy43/Qualibytes-Ecommerce.git', branch: 'main'
+                // Explicit git clone to avoid "checkout scm" errors
+                sh '''
+                    if [ -d ecom ]; then
+                        rm -rf ecom
+                    fi
+                    git clone -b main https://github.com/jyotirmoy43/Qualibytes-Ecommerce.git ecom
+                '''
             }
         }
 
         stage('Verify Tools') {
             steps {
-                sh """
+                sh '''
                     echo "Checking for required tools..."
-                    command -v docker || { echo 'Docker not installed'; exit 1; }
-                    command -v kubectl || { echo 'kubectl not installed'; exit 1; }
-                """
+                    command -v docker >/dev/null || { echo "Docker not installed"; exit 1; }
+                    command -v kubectl >/dev/null || { echo "kubectl not installed"; exit 1; }
+                '''
             }
         }
 
@@ -36,19 +41,23 @@ pipeline {
             parallel {
                 stage('Build App Image') {
                     steps {
-                        sh """
-                            echo "Building main app image..."
-                            docker build -t ${DOCKER_USER}/qbshop-app:${IMAGE_TAG} .
-                        """
+                        dir('ecom') {
+                            sh '''
+                                echo "Building main app image..."
+                                docker build -t ${DOCKER_USER}/qbshop-app:${IMAGE_TAG} .
+                            '''
+                        }
                     }
                 }
 
                 stage('Build Migration Image') {
                     steps {
-                        sh """
-                            echo "Building migration image..."
-                            docker build -t ${DOCKER_USER}/qbshop-migration:${IMAGE_TAG} -f scripts/Dockerfile.migration .
-                        """
+                        dir('ecom') {
+                            sh '''
+                                echo "Building migration image..."
+                                docker build -t ${DOCKER_USER}/qbshop-migration:${IMAGE_TAG} -f scripts/Dockerfile.migration .
+                            '''
+                        }
                     }
                 }
             }
@@ -57,28 +66,29 @@ pipeline {
         stage('Push Docker Images') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-password', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
+                    sh '''
                         echo "${DOCKER_PASS}" | docker login -u ${DOCKER_USER} --password-stdin
                         docker push ${DOCKER_USER}/qbshop-app:${IMAGE_TAG}
                         docker push ${DOCKER_USER}/qbshop-migration:${IMAGE_TAG}
-                    """
+                    '''
                 }
             }
         }
 
         stage('Deploy to Kubernetes (EKS)') {
             steps {
-                sh """
-                    if [ ! -f ${DEPLOY_FILE} ]; then
-                        echo "Deployment file ${DEPLOY_FILE} not found!"
-                        exit 1
-                    fi
+                dir('ecom') {
+                    sh '''
+                        if [ ! -f ${DEPLOY_FILE} ]; then
+                            echo "Deployment file ${DEPLOY_FILE} not found!"
+                            exit 1
+                        fi
 
-                    echo "Updating Kubernetes deployment..."
-                    sed -i 's|REPLACE_TAG|${IMAGE_TAG}|g' ${DEPLOY_FILE}
-
-                    kubectl --kubeconfig=${KUBE_CONFIG} apply -f ${DEPLOY_FILE}
-                """
+                        echo "Updating Kubernetes deployment..."
+                        sed -i "s|REPLACE_TAG|${IMAGE_TAG}|g" ${DEPLOY_FILE}
+                        kubectl --kubeconfig=${KUBE_CONFIG} apply -f ${DEPLOY_FILE}
+                    '''
+                }
             }
         }
     }
