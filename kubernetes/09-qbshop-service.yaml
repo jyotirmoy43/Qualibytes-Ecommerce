@@ -4,12 +4,10 @@ metadata:
   name: qbshop-service
   namespace: qbshop
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: qbshop
   ports:
-    - name: http
-      protocol: TCP
+    - protocol: TCP
       port: 80
       targetPort: 3000
-      nodePort: 30000
